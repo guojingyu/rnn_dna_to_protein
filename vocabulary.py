@@ -60,3 +60,8 @@ NUCLEOTIDE = "".join(set(TRANSCRIPTION_TABLE.keys()))
 AMINO_ACID = "".join(sorted(list(set(TRUE_DNA_CODON_TABLE.values()))))
 # print(NUCLEOTIDE, AMINO_ACID)
 # *ACDEFGHIKLMNPQRSTVWY
+
+END_OF_SENTENCE="."
+
+def append_eos(sentence, EOS=END_OF_SENTENCE):
+    return sentence + EOS

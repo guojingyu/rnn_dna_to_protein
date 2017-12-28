@@ -11,32 +11,35 @@ from __future__ import print_function
 import numpy as np
 
 
-def loss_per(self, y_hat, y):
+def cross_entropy_loss(self, Y_hat, Y):
     """
-    :param y_hat: y_hat = decoder(encoder(x))
-    y_hat is a softmax output.
-    :param y: y is also an encoded prob distribution.
+    The loss function here is defined as an average over all amino acid
+    cross entropy loss (regardless which samples they are from) .
+    It is good to concatenate all samples (amino acid string vectors) in a
+    batch together.
+    :param Y_hat: Y_hat is a collection of y_hat, such as y_hat = decoder(
+    encoder(x)). y_hat is a softmax output vector for one amino acid.
+    :param Y: Y is a collection of Y. y is also an encoded one hot vector for
+    one amino acid.
     :return: loss as defined by categorical entropy
     """
-    return -1.0 * y * np.log(y_hat)
-
-
-def total_cost(self, Y, X, Y_hat):
-    """
-
-    :param self:
-    :param Y:
-    :param X:
-    :param Y_hat:
-    :return:
-    """
-    N = len(Y)
     loss = 0.0
-    for i in np.arange(N):
-        precision_per_sample = Y_hat[np.arange(len(y[i])), y[i]]
-        # Add to the loss based on how off we were
-        loss += -1 * np.sum(np.log(precision_per_sample))
-    return loss
+    for y_hat, y in zip(Y_hat, Y):
+        loss += -1.0 * np.sum(np.multiply(y, np.log(y_hat)))
+    return loss/len(Y_hat)
+
+def softmax(x):
+    """
+    Not completely following the mathematic defintion of softmax.
+    As suggested by Stanford cs231n about softmax,
+    to shift the values of x so that the highest number is 0.
+    This will lead to better numeric stability.
+    :param x: a distribution of numbers as a numpy array
+    :return: normalized vector as a numpy array
+    """
+    e_x = np.exp(x - np.max(x))
+    out = e_x / e_x.sum()
+    return out
 
 
 class RNN(object):
@@ -57,6 +60,7 @@ class RNN(object):
         self.o_dim = o_dim
         self.bptt_truncate = bptt_truncate
         self.use_relu = use_relu
+        self.time_step = 0
         # param init
         self.U = self.xavier_param_init(self.h_dim, self.x_dim, self.x_dim, self.use_relu)
         self.V = self.xavier_param_init(self.o_dim, self.h_dim, self.h_dim, self.use_relu)
@@ -84,11 +88,16 @@ class RNN(object):
         """
         forward pass
         :param X: input -- 2d matrix with each row being an one hot encoding
-        :return: tuple of size two (h_t, o_t)
+        :return: tuple of size two (H, S, O)
         """
-        pass
-        #TODO implement
-        return h_t, o_t
+        self.time_step = len(X)
+        # time_step + 1 to add an initial hidden state for the neuron
+        H = np.zeros((self.time_step + 1, self.h_dim))
+        O = np.zeros((self.time_step, self.o_dim))
+        for t in range(self.time_step):
+            H[t] = np.tanh(self.U[:, X[t]] + self.W.dot(H[t - 1]))
+            O[t] = softmax(self.V.dot(H[t]))
+        return H, O
 
     def encoding_forward(self, X):
         """
@@ -96,17 +105,36 @@ class RNN(object):
         :param X: input -- 2d matrix with each row being an one hot encoding
         :return: h_t
         """
-        h_t, _ = self.forward(X)
-        return h_t
+        H, O = self.forward(X)
+        return H, O[len(X)] # discarded other outputs but the last one
 
-    def decoding_forward(self, C, stop_vec):
+    def decoding_forward(self, C, W, stop_vec):
         """
-
-        :param C:
+        forward pass as decoding steps
+        :param C: the input hidden status or context (thus C)
+        :param W: the last output from encoder
+        :param stop_vec: use for ending the pass
         :param stop_vec:
         :return:
         """
-        pass
+        H = np.zeros((1, self.h_dim))
+        O = np.zeros((time_step, self.h_dim))
+        while :
+            self.time_step += 1
+            H[t] = np.tanh(self.U[:, X[t]] + self.W.dot(H[t - 1]))
+            O[t] = softmax(self.V.dot(H[t]))
+        return H, O
+
+    def backprop_through_time(self, L):
+        """
+        Present a sequence of timesteps of input and output pairs to the network.
+        Unroll the network then calculate and accumulate errors across each timestep.
+        Roll-up the network and update weights.
+        Repeat.
+        :return:
+        """
+        for i in range(bptt_truncate):
+
 
 
 class Seq2Seq(object):
