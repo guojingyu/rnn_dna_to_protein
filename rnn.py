@@ -125,15 +125,34 @@ class RNN(object):
             O[t] = softmax(self.V.dot(H[t]))
         return H, O
 
-    def backprop_through_time(self, L):
+    def backprop_through_time(self, error, k1):
         """
-        Present a sequence of timesteps of input and output pairs to the network.
-        Unroll the network then calculate and accumulate errors across each timestep.
+        A truncated back prop through timestep method for rnn training.
+
+        Truncated BPTT is a closely related method. It processes the sequence
+        one timestep at a time, and every k1 timesteps, it runs BPTT for k2
+        timesteps, so a parameter update can be cheap if k2 is small.
+        Consequently, its hidden states have been exposed to many timesteps
+        and so may contain useful information about the far past, which
+        would be opportunistically exploited.
+        By Ilya Sutskever, Training Recurrent Neural Networks, Dissertation
+        2013
+
+        Present a sequence of k1 timesteps of input and output pairs to the network.
+        Unroll the network then calculate and accumulate errors across k2 timesteps.
         Roll-up the network and update weights.
-        Repeat.
-        :return:
+        Repeat
+        https://machinelearningmastery.com/gentle-introduction-backpropagation-time/
         """
-        for i in range(bptt_truncate):
+        # in case k1 (which would be input sequence length) is smaller than
+        # predefined self.bptt_truncate
+        if k1 < self.bptt_truncate:
+            k2 = k1
+        else:
+            k2 = self.bptt_truncate
+
+        for i in range(k1)# k1
+        for i in range(bptt_truncate): # k2
 
 
 
