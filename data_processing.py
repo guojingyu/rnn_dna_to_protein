@@ -9,7 +9,8 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-from vocabulary import NUCLEOTIDE, AMINO_ACID, END_OF_SENTENCE, append_eos
+from vocabulary import TRUE_DNA_CODON_TABLE, NUCLEOTIDE, AMINO_ACID, \
+    STOP_CODONS, END_OF_SENTENCE, append_eos
 
 # For One-hot encoding
 # define two way mapping of chars to integers and an encoding method
@@ -30,6 +31,10 @@ def encoding(input, alphabet, add_eos=True, EOS=END_OF_SENTENCE):
     output = np.zeros(len(alphabet))
     output[alphabet.index(input)] = 1
     return output
+
+def decoding(input, alphabet, added_eos=True, EOS=END_OF_SENTENCE):
+    pass
+
 
 
 # reverse sequence
@@ -81,55 +86,64 @@ class BatchGenerator(object):
             batches = batches[::-1]
         return batches
 
-    # Define a training data generator since we do know the true distribution (the truth codon table) as above
-    # A typical English sentences from my intuition is about 15 words.
-    # In this implementation, I will generate sampled data for training the network
-    def generate_seq_data_by_truth_codon(codon_tbl=TRUE_DNA_CODON_TABLE,
-                                         n=1000, stop_codons=STOP_CODONS,
-                                         stop_codon_append_prob=0.05):
-        # the DNA length is set to be positive natural number that is product of 3
-        # this is enforced since the codon are actually in triplets
-        # while it is possible to do it with any length of DNA,
-        # just as the language model learned per-char by RNN shown
-        # in Andrej Karpathy's blog post.
-        DNA_lengths = np.random.choice(np.arange(3, 30 + 1, 3),
-                                       n)  # uniform sampling in [ 3,  6,  9, 12, 15, 18, 21, 24, 27, 30]
-        keys = list(codon_tbl.keys())
-        num_codon = len(keys)
-        data = []
-        for i in range(n):
-            l = DNA_lengths[i]
-            j = 0
-            dna_seq = ""
-            ptn_seq = ""
-            while j < l / 3:
-                codon = keys[np.random.choice(num_codon, 1)[0]]
-                if codon not in stop_codons:
-                    dna_seq += codon
-                    ptn_seq += TRUE_DNA_CODON_TABLE[codon]
-                    j += 1
 
-            if stop_codon_append_prob > np.random.uniform():
-                stop_c = stop_codons[
-                    np.random.choice(np.arange(len(stop_codons)), 1)[0]]
-                dna_seq += stop_c
-                ptn_seq += TRUE_DNA_CODON_TABLE[stop_c]
 
-            data.append([dna_seq, ptn_seq])
+        #
+        # if __name__ == "__main__":
+        #     train_batches = BatchGenerator(train_text, batch_size, num_unrollings)
+        #     valid_batches = BatchGenerator(valid_text, 1, num_unrollings)
+        #     train_reversed_batches = BatchGenerator(train_text, batch_size, num_unrollings,
+        #                                         True)
+        #     valid_reversed_batches = BatchGenerator(valid_text, 1, num_unrollings, True)
 
-        return data
-
-    generate_seq_data_by_truth_codon(codon_tbl=TRUE_DNA_CODON_TABLE, n=10,
+# Define a training data generator since we do know the true distribution (the truth codon table) as above
+# A typical English sentences from my intuition is about 15 words.
+# In this implementation, I will generate sampled data for training the network
+def generate_seq_data_by_truth_codon(codon_tbl=TRUE_DNA_CODON_TABLE,
                                      stop_codons=STOP_CODONS,
-                                     stop_codon_append_prob=0.05)
+                                     stop_codon_append_prob=0.05):
+    # the DNA length is set to be positive natural number that is product of 3
+    # this is enforced since the codon are actually in triplets
+    # while it is possible to do it with any length of DNA,
+    # just as the language model learned per-char by RNN shown
+    # in Andrej Karpathy's blog post.
+    # uniform sampling in [ 3,  6,  9, 12, 15, 18, 21, 24, 27, 30]
+    DNA_length = np.random.choice(np.arange(3, 30 + 1, 3))
+    keys = list(codon_tbl.keys())
+    num_codon = len(keys)
 
-#
-# if __name__ == "__main__":
-#     train_batches = BatchGenerator(train_text, batch_size, num_unrollings)
-#     valid_batches = BatchGenerator(valid_text, 1, num_unrollings)
-#     train_reversed_batches = BatchGenerator(train_text, batch_size, num_unrollings,
-#                                         True)
-#     valid_reversed_batches = BatchGenerator(valid_text, 1, num_unrollings, True)
+    j = 0
+    dna_seq = ""
+    ptn_seq = ""
+    while j < DNA_length / 3:
+        codon = keys[np.random.choice(num_codon, 1)[0]]
+        if codon not in stop_codons:
+            dna_seq += codon
+            ptn_seq += TRUE_DNA_CODON_TABLE[codon]
+            j += 1
+    if stop_codon_append_prob > np.random.uniform():
+        stop_c = stop_codons[np.random.choice(np.arange(len(stop_codons)), 1)[0]]
+        dna_seq += stop_c
+        ptn_seq += TRUE_DNA_CODON_TABLE[stop_c]
+
+    return [dna_seq, ptn_seq]
+
+def generate_data(n=1000, encoded=True, codon_tbl=TRUE_DNA_CODON_TABLE,
+                           stop_codons=STOP_CODONS,
+                           stop_codon_append_prob=0.05):
+    data = []
+    for i in range(n):
+        dna_seq, ptn_seq = generate_seq_data_by_truth_codon(codon_tbl,
+                                                            stop_codons,
+                                                            stop_codon_append_prob)
+        if encoded:
+            data.append([np.array([encoding(n, NUCLEOTIDE) for n in
+                                   dna_seq]),
+                         np.array([encoding(n, AMINO_ACID) for n in
+                                   ptn_seq])])
+        else:
+            data.append([dna_seq, ptn_seq])
+    return data
 
 if __name__ == "__main__":
     # test example
@@ -179,3 +193,9 @@ if __name__ == "__main__":
 
     # scikit-learn has a similar one-hot encoding tool as
     # sklearn.preprocessing.OneHotEncoder
+
+
+    print(generate_seq_data_by_truth_codon(codon_tbl=TRUE_DNA_CODON_TABLE,
+                                     stop_codons=STOP_CODONS,
+                                     stop_codon_append_prob=0.05))
+    print(generate_data(n=10, encoded=False))

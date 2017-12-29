@@ -50,8 +50,8 @@ def transcribe(seq):
 
 TRANSCRIPTION_TABLE = {"A": transcribe("A"), "T": transcribe("T"),
                        "C": transcribe("C"), "G": transcribe("G")}
-# print(TRANSCRIPTION_TABLE)
-#  {'A': 'A', 'T': 'U', 'C': 'C', 'G': 'G'}
+# print(TRANSCRIPTION_TABLE) # {'A': 'A', 'T': 'U', 'C': 'C', 'G': 'G'}
+STOP_CODONS = ["TAA", "TGA", "TAG"]
 
 # Include nucleotide alphabet
 NUCLEOTIDE = "".join(set(TRANSCRIPTION_TABLE.keys()))
