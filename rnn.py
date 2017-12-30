@@ -133,30 +133,31 @@ class RNN(object):
         O = np.zeros((self.timesteps, self.o_dim))
         for t in range(self.timesteps):
             # update
-            H[t] = np.tanh(np.dot(self.W_h, H[t - 1]) + np.dot(self.W_x, X[t]) +
-                           self.b)
+            H[t] = np.tanh(np.dot(self.W_h, H[t - 1]) +
+                           np.dot(self.W_x, X[t]) +
+                           self.b) # H[t] shaped (self.h_dim, 1)
             # the output itself is based on the current timestep hidden status
-            O[t] = softmax(np.dot(self.W_o, H[t]) + self.c)
+            O[t] = softmax(np.dot(self.W_o, H[t]) + self.c) # O[t] (self.o_dim, 1)
         return H, O
 
     def encoding_forward(self, X):
         """
         forward pass as encoding_forward
         :param X: input -- 2d matrix with each row being an one hot encoding
-        :return: H, O
+        :return: H
         """
-        return self.forward(X) # other outputs but the last one can be discarded
+        H, _ = self.forward(X)
+        return H
 
-    def decoding_forward(self, C, W, eos_vec):
+    def decoding_forward(self, C, eos_vec):
         """
         forward pass as decoding steps
         :param C: the input hidden status or context (thus C)
-        :param W: the last output from encoder with the output dimension
         :param eos_vec: use for ending the pass
         :return:
         """
-        H = C
-        O = W
+        H = np.array([C])
+        O = np.zeros((1, self.o_dim))
         while O[self.timesteps] is not eos_vec:
             # update timestep counts
             self.timesteps += 1
@@ -173,7 +174,7 @@ class RNN(object):
                                         self.c)
         return H, O
 
-    def backprop_through_time(self, O, Y, k1):
+    def backprop_through_time(self, X, Y, H, O):
         """
         A truncated back prop through timestep method for passing back loss
         gradient though rnn.
@@ -195,10 +196,11 @@ class RNN(object):
 
         In this implementation, the gradient passing back is separated from
         the gradient descent.
-        :param O: normalized output probs
+        :param X: input
         :param Y: labels one hotcoded
-        :param k1: timesteps
-        :return: derivatives
+        :param O: normalized output probs
+        :param H: hidden states after forward pass with X, Y
+        :return: gradients to update weights
         """
         # in case k1 (which would be input sequence length or timesteps) is
         # smaller than predefined self.bptt_truncate
@@ -215,6 +217,7 @@ class RNN(object):
         db = np.zeros(self.h_dim).astype(np.float32)
         dc = np.zeros(self.o_dim).astype(np.float32)
 
+        # gradient for the softmax
         O, Y = padding_vector(O, Y)
         dO = O - Y # only works for one-hot encoding, dO shaped (sample, o_dim)
         for t in reversed(range(k1)):
@@ -223,20 +226,79 @@ class RNN(object):
             # particular one input at time t
             # By adding up, the gradients will accumulate derivatives at all
             # timesteps, as from all input in the sample sequence
-            dW_o += np.outer(dO[t], self.H[t]) # shaped (o_dim, h_dim)
+            dW_o += np.outer(dO[t], H[t]) # shaped (o_dim, h_dim)
             dc += np.sum(dO[t], axis=0, keepdims=True)
-            # for weights for both prev hidden state and input and bias at
+            # for gradients for both prev hidden state and input and bias at
             # time t
-            # dO[t] shaped 
-            dH = np.dot(dO[t], self.W_o[t]) * tanh_derivative(self.H[t])
-            # Backprop through time by max(0, t-k2) steps (see above) using
-            # derivatives at time t
+            # dO[t] shaped (1, o_dim) W_o shape (o_dim, h_dim)
+            dH_t = np.dot(dO[t], self.W_o) * tanh_derivative(H[t]) #dH_t (1, h_dim)
+            # Backprop through time from time t by max(1, t-k2+1) steps (see
+            # above) using hidden derivatives at time t
+            # this is a tricky bit: there is one time step added for hidden
+            # states in forward pass, thus the max is not thresheld by 0 but
+            # by 1, thus the real first input is at timestep 1.
+            for t2 in reversed(range(max(1, t - k2 + 1), t)):
+                dW_h += np.outer(dH_t, H[t2-1]) # -1 for prev step
+                # shape (h_dim, h_dim)
+                dW_x += np.outer(dH_t, X[t2]) # shape (h_dim, x_dim)
+                db += np.sum(dH_t[t2], axis=0, keepdims=True)
+                # Update hidden gradients for one previous timestep in back prop
+                dH_t = np.dot(dH_t, self.W_h) * tanh_derivative(H[t2-1])
+        return dW_x, dW_h, dW_o, db, dc
 
-            for t2 in reversed(range(max(0, t - k2), t + 1)):
-                dLdW += np.outer(delta_t, s[bptt_step - 1])
-                dLdU[:, x[bptt_step]] += delta_t
-                # Update delta for next step
-                delta_t = self.W.T.dot(delta_t) * (1 - s[bptt_step - 1] ** 2)
+
+    def encoding_backprop_through_time(self, X, dContext, H):
+        """
+        Unlike vanilla RNN, encoder does not have Y to supervise the
+        learning. Thus the backprop-tt will needed to be revised to only
+        consider 1 supervising source (dContext) as the gradient of the context
+        export.
+        :param X: input
+        :param dContext: dContext will be the dW_h from decoder bptt algorithm
+        :param H: hidden states after forward pass with X
+        :return: gradients to update weights
+        """
+        # in case k1 (which would be input sequence length or timesteps) is
+        # smaller than predefined self.bptt_truncate
+        k1 = self.timesteps
+        if k1 < self.bptt_truncate:
+            k2 = k1
+        else:
+            k2 = self.bptt_truncate
+
+        # init placeholder for gradients
+        dW_x = np.zeros(self.W_x.shape).astype(np.float32)
+        dW_h = np.zeros(self.W_h.shape).astype(np.float32)
+        db = np.zeros(self.h_dim).astype(np.float32)
+
+        dH_t = dContext
+        for t in reversed(range(k1)):
+            # Backprop through time from time t by max(1, t-k2+1) steps (see
+            # above) using hidden derivatives at time t
+            # this is a tricky bit: there is one time step added for hidden
+            # states in forward pass, thus the max is not thresheld by 0 but
+            # by 1, thus the real first input is at timestep 1.
+            for t2 in reversed(range(max(1, t - k2 + 1), t)):
+                dW_h += np.outer(dH_t, H[t2 - 1])  # -1 for prev step
+                # shape (h_dim, h_dim)
+                dW_x += np.outer(dH_t, X[t2])  # shape (h_dim, x_dim)
+                db += np.sum(dH_t[t2], axis=0, keepdims=True)
+                # Update hidden gradients for one previous timestep in back prop
+                dH_t = np.dot(dH_t, self.W_h) * tanh_derivative(H[t2 - 1])
+        return dW_x, dW_h, db
+
+
+    def decoding_backprop_through_time(self, X, Y, H, O):
+        """
+        Like vanilla RNN, decoder has O as the input X. Thus the
+        backprop-tt can stay the same
+        :param X: input
+        :param Y: labels one hotcoded
+        :param O: normalized output probs
+        :param H: hidden states after forward pass with X, Y
+        :return: gradients to update weights
+        """
+        return self.backprop_through_time(X, Y, H, O)
 
     def update(self, dW_x, dW_h, dW_o, db, dc, learning_rate = 0.005):
         """
@@ -251,16 +313,12 @@ class RNN(object):
 
 
 
-
-
 class Seq2Seq(object):
-    def __init__(self):
+    def __init__(self, encoder, decoder):
         # Define two RNN one as encoder and one as decoder
-        self.encoder = RNN(input_dim=5, h_dim=100, o_dim=21, bptt_truncate=4,
-                           rnn_role='encoder')
-        self.decoder = RNN(input_dim=21, h_dim=100, o_dim=21,
-                           bptt_truncate=4, rnn_role='decoder')
-        self.time_step # this is the k1 by Ilya Sutskever
+        self.encoder = encoder
+        self.decoder = decoder
+        self.timesteps = 0
 
     def forward(self, X, stop_vec):
         """
@@ -268,21 +326,26 @@ class Seq2Seq(object):
         :param X: input sample as an encoding of a sequence
         :return: ec_H, ec_O, dc_H, dc_O
         """
-        ec_H, ec_O = self.encoder.encoding_forward(X)
-        dc_H, dc_O = self.decoder.decoding_forward(ec_H[-1],
-                                                   ec_O[-1],
-                                                   stop_vec)
-        return ec_H, ec_O, dc_H, dc_O
+        ec_H = self.encoder.encoding_forward(X)
+        dc_H, dc_O = self.decoder.decoding_forward(ec_H[-1], stop_vec)
+        self.timesteps = self.encoder.timesteps + self.encoder.timesteps
+        return ec_H, dc_H, dc_O
 
     def train(self, data, learning_rate=0.005, epoch=100,
-              reverse_input=False, stop_vec=encoding(END_OF_SENTENCE, AMINO_ACID)):
+              reverse_input=False,
+              stop_vec=encoding(END_OF_SENTENCE, AMINO_ACID),
+              print_interval=100):
+        loss = []
         for i in range(0, len(data)):
             X, Y = data[i]
             if reverse_input: X = reverse_seq(X)
             # forward
-            ec_H, ec_O, dc_H, dc_O = self.forward(X, stop_vec)
+            ec_H, dc_H, dc_O = self.forward(X, stop_vec)
             # evaluate error
-            loss = cross_entropy_loss(dc_O, Y)
+            current_loss = total_loss(dc_O, Y)
+            loss.append((i, current_loss))
+            if i % print_interval == 0:
+                print("Current Loss: %s".format())
             # back prop
 
 
@@ -294,6 +357,9 @@ class Seq2Seq(object):
 
 
 
-
+RNN(input_dim=5, h_dim=100, o_dim=21, bptt_truncate=4,
+                           rnn_role='encoder')
+RNN(input_dim=21, h_dim=100, o_dim=21,
+                           bptt_truncate=4, rnn_role='decoder')
 
 
