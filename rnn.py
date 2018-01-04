@@ -311,6 +311,45 @@ class RNN(object):
         self.b   -= learning_rate * db
         self.c   -= learning_rate * dc
 
+    def train(self, data, learning_rate=0.005, epoch=100,
+              reverse_input=False,
+              print_interval=100):
+        """
+        train the vanilla rnn method
+        :param X: Input
+        :param Y: Input lable
+        :return: loss records
+        """
+        loss = []
+        for n in range(epoch):
+            for i in range(0, len(data)):
+                X, Y = data[i]
+                if reverse_input: X = reverse_seq(X)
+                # forward
+                H, O = self.forward(X)
+                # back prop
+                dW_x, dW_h, dW_o, db, dc = self.backprop_through_time(X, Y, H, O)
+                # update
+                self.update(dW_x, dW_h, dW_o, db, dc, learning_rate)
+            # evaluate error
+            current_loss = total_loss(O, Y)
+            loss.append((n, current_loss))
+            if n % print_interval == 0:
+                print("Current Loss: %s".format())
+        return loss
+
+
+    def predict(self, X):
+        """
+        predict function
+        :param X: input -- 2d matrix with each row being an one hot encoding of X length
+        :return: output -- 2d matrix with each row being an one hot encoding of O length
+        """
+        _, O = self.forward(X)
+        pred = np.zeros(np.shape(O))
+        one_index = np.argmax(O, axis=1)
+        pred[np.arange(len(pred)), one_index] = 1.0
+        return pred
 
 
 class Seq2Seq(object):
@@ -336,20 +375,35 @@ class Seq2Seq(object):
               stop_vec=encoding(END_OF_SENTENCE, AMINO_ACID),
               print_interval=100):
         loss = []
-        for i in range(0, len(data)):
-            X, Y = data[i]
-            if reverse_input: X = reverse_seq(X)
-            # forward
-            ec_H, dc_H, dc_O = self.forward(X, stop_vec)
+        for n in range(epoch):
+            for i in range(0, len(data)):
+                X, Y = data[i]
+                if reverse_input: X = reverse_seq(X)
+                # forward
+                ec_H, dc_H, dc_O = self.forward(X, stop_vec)
+                # back prop
+                dW_x, dW_h, dW_o, db, dc = self.backprop_through_time(X, Y, H, O)
+                # update
+                self.update(dW_x, dW_h, dW_o, db, dc, learning_rate)
             # evaluate error
-            current_loss = total_loss(dc_O, Y)
-            loss.append((i, current_loss))
-            if i % print_interval == 0:
+            current_loss = total_loss(O, Y)
+            loss.append((n, current_loss))
+            if n % print_interval == 0:
                 print("Current Loss: %s".format())
-            # back prop
+        return loss
 
 
-
+    def predict(self, X):
+        """
+        predict function
+        :param X: input -- 2d matrix with each row being an one hot encoding of X length
+        :return: output -- 2d matrix with each row being an one hot encoding of O length
+        """
+        _, O = self.forward(X)
+        pred = np.zeros(np.shape(O))
+        one_index = np.argmax(O, axis=1)
+        pred[np.arange(len(pred)), one_index] = 1.0
+        return pred
 
 
     def evaluate(self, input):
