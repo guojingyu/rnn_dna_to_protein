@@ -311,9 +311,7 @@ class RNN(object):
         self.b   -= learning_rate * db
         self.c   -= learning_rate * dc
 
-    def train(self, data, learning_rate=0.005, epoch=100,
-              reverse_input=False,
-              print_interval=100):
+    def train(self, data, learning_rate=0.005, epoch=100, print_interval=100):
         """
         train the vanilla rnn method
         :param X: Input
@@ -339,9 +337,9 @@ class RNN(object):
         return loss
 
 
-    def predict(self, X):
+    def evaluate(self, X):
         """
-        predict function
+        evaluate function
         :param X: input -- 2d matrix with each row being an one hot encoding of X length
         :return: output -- 2d matrix with each row being an one hot encoding of O length
         """
@@ -393,21 +391,18 @@ class Seq2Seq(object):
         return loss
 
 
-    def predict(self, X):
+    def evaluate(self, X, stop_vec):
         """
-        predict function
+        evaluate function
         :param X: input -- 2d matrix with each row being an one hot encoding of X length
         :return: output -- 2d matrix with each row being an one hot encoding of O length
         """
-        _, O = self.forward(X)
-        pred = np.zeros(np.shape(O))
-        one_index = np.argmax(O, axis=1)
+        _, _, dc_O = self.forward(X, stop_vec)
+        pred = np.zeros(np.shape(dc_O))
+        one_index = np.argmax(dc_O, axis=1)
         pred[np.arange(len(pred)), one_index] = 1.0
         return pred
 
-
-    def evaluate(self, input):
-        pass
 
 
 
