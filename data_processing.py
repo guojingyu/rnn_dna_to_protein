@@ -32,8 +32,11 @@ def encoding(input, alphabet, add_eos=True, EOS=END_OF_SENTENCE):
     output[alphabet.index(input)] = 1
     return output
 
-def decoding(input, alphabet, added_eos=True, EOS=END_OF_SENTENCE):
-    pass
+def decoding(one_hot_vec, alphabet, added_eos=True, EOS=END_OF_SENTENCE):
+    if added_eos:
+        alphabet = alphabet + EOS
+    one_index = np.where(one_hot_vec == 1.0)[0][0]
+    return alphabet[one_index]
 
 
 
@@ -178,6 +181,9 @@ if __name__ == "__main__":
     # 0. 1.  0.  0.]
     # [ 1.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.  0.
     # 0. 0.  0.  0.]]
+    ptn_decoding = "".join([decoding(vec, AMINO_ACID, added_eos=False) for
+                            vec in ptn_encoding])
+    print(ptn_decoding)
 
 
     # Using keras is much easier to get a zero-starting numeric representation of

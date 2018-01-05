@@ -13,6 +13,7 @@ from data_processing import encoding, decoding, reverse_seq
 from vocabulary import TRUE_DNA_CODON_TABLE, NUCLEOTIDE, AMINO_ACID, \
     STOP_CODONS, END_OF_SENTENCE
 
+
 def padding_vector(v1, v2):
     """
     padding the 2d shorter matrix by the end with zeros to be taller
@@ -50,6 +51,7 @@ def cross_entropy_correct_prob(Y_hat, Y):
     corr_prob = -1.0 * np.sum(np.multiply(Y, np.log(Y_hat)), axis=1)
     return corr_prob
 
+
 def total_loss(Y_hat, Y):
     return np.sum(cross_entropy_correct_prob(Y_hat, Y)) / len(Y)
 
@@ -67,6 +69,7 @@ def softmax(x):
     out = e_x / e_x.sum()
     return out
 
+
 def tanh_derivative(x):
     """
     https://socratic.org/questions/what-is-the-derivative-of-tanh-x
@@ -74,6 +77,7 @@ def tanh_derivative(x):
     :return: d_tanh
     """
     return 1.0 - np.tanh(x)**2
+
 
 class RNN(object):
     def __init__(self, input_dim=4, h_dim=100, o_dim=21, bptt_truncate=4, rnn_role=None):
@@ -121,6 +125,7 @@ class RNN(object):
         return np.random.uniform(-np.sqrt(d/ prev_layer_dim),
                                  np.sqrt(d/prev_layer_dim), (r_dim, c_dim))
 
+
     def forward(self, X):
         """
         forward pass
@@ -140,6 +145,7 @@ class RNN(object):
             O[t] = softmax(np.dot(self.W_o, H[t]) + self.c) # O[t] (self.o_dim, 1)
         return H, O
 
+
     def encoding_forward(self, X):
         """
         forward pass as encoding_forward
@@ -148,6 +154,7 @@ class RNN(object):
         """
         H, _ = self.forward(X)
         return H
+
 
     def decoding_forward(self, C, eos_vec):
         """
@@ -173,6 +180,7 @@ class RNN(object):
             O[self.timesteps] = softmax(np.dot(self.W_o, H[self.timesteps]) +
                                         self.c)
         return H, O
+
 
     def backprop_through_time(self, X, Y, H, O):
         """
@@ -300,6 +308,7 @@ class RNN(object):
         """
         return self.backprop_through_time(X, Y, H, O)
 
+
     def update(self, dW_x, dW_h, dW_o, db, dc, learning_rate = 0.005):
         """
         update weights by gradient
@@ -310,6 +319,7 @@ class RNN(object):
         self.W_o -= learning_rate * dW_o
         self.b   -= learning_rate * db
         self.c   -= learning_rate * dc
+
 
     def train(self, data, learning_rate=0.005, epoch=100, print_interval=100):
         """
@@ -357,6 +367,7 @@ class Seq2Seq(object):
         self.decoder = decoder
         self.timesteps = 0
 
+
     def forward(self, X, stop_vec):
         """
         an encoder-decoder forward
@@ -367,6 +378,45 @@ class Seq2Seq(object):
         dc_H, dc_O = self.decoder.decoding_forward(ec_H[-1], stop_vec)
         self.timesteps = self.encoder.timesteps + self.encoder.timesteps
         return ec_H, dc_H, dc_O
+
+
+    def backward(self, X, Y, ec_H, dc_H, dc_O):
+        """
+        an encoder-decoder backward pass
+        :return:
+        """
+        # the dc_O, decoder output is the input for itself
+        dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc = \
+            self.decoder.decoding_backprop_through_time(dc_O, Y, dc_H, dc_O)
+        ec_dW_x, ec_dW_h, ec_db = \
+            self.encoder.encoding_backprop_through_time(X, dc_dW_h, ec_H)
+        return ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc
+
+
+    def update(self, ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db,
+               dc_dc, learning_rate = 0.005):
+        """
+         update weights by gradient
+        :param ec_dW_x:
+        :param ec_dW_h:
+        :param ec_db:
+        :param dc_dW_x:
+        :param dc_dW_h:
+        :param dc_dW_o:
+        :param dc_db:
+        :param dc_dc:
+        :param learning_rate:
+        :return:
+        """
+        # decoder update
+        self.decoder.update(dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc,
+                            learning_rate)
+
+        # encoder update
+        self.encoder.W_x -= learning_rate * ec_dW_x
+        self.encoder.W_h -= learning_rate * ec_dW_h
+        self.encoder.b   -= learning_rate * ec_db
+
 
     def train(self, data, learning_rate=0.005, epoch=100,
               reverse_input=False,
@@ -380,9 +430,11 @@ class Seq2Seq(object):
                 # forward
                 ec_H, dc_H, dc_O = self.forward(X, stop_vec)
                 # back prop
-                dW_x, dW_h, dW_o, db, dc = self.backprop_through_time(X, Y, H, O)
+                ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc = \
+                    self.backward(X, Y, ec_H, dc_H, dc_O)
                 # update
-                self.update(dW_x, dW_h, dW_o, db, dc, learning_rate)
+                self.update(ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h,
+                            dc_dW_o, dc_db, dc_dc, learning_rate)
             # evaluate error
             current_loss = total_loss(O, Y)
             loss.append((n, current_loss))
@@ -402,13 +454,3 @@ class Seq2Seq(object):
         one_index = np.argmax(dc_O, axis=1)
         pred[np.arange(len(pred)), one_index] = 1.0
         return pred
-
-
-
-
-RNN(input_dim=5, h_dim=100, o_dim=21, bptt_truncate=4,
-                           rnn_role='encoder')
-RNN(input_dim=21, h_dim=100, o_dim=21,
-                           bptt_truncate=4, rnn_role='decoder')
-
-
