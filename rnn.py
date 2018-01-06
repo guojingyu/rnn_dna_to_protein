@@ -332,7 +332,6 @@ class RNN(object):
         for n in range(epoch):
             for i in range(0, len(data)):
                 X, Y = data[i]
-                if reverse_input: X = reverse_seq(X)
                 # forward
                 H, O = self.forward(X)
                 # back prop
