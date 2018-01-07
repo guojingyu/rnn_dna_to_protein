@@ -60,11 +60,11 @@ def get_alignment(pred, label, matching=2, mismatching=-1, gap=0.5,
 if __name__ == "__main__":
     # setting param
     encoded = True
-    data_size = 10000
+    data_size = 1000
     learning_rate = 0.001
     epoch = 10
     epoch_print_interval = 1
-    data_print_interval = 1000
+    data_print_interval = 100
     dna_stop_vec = encoding(END_OF_SENTENCE, NUCLEOTIDE)
     ptn_stop_vec = encoding(END_OF_SENTENCE, AMINO_ACID)
 
