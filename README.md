@@ -10,8 +10,8 @@ I expect approaching 0 training loss in ideal situation due to unlimited no
 noise data available. It still needs more investigation and work.
 
 #### Overview
-This is a RNN demo implementation to learn general rules of central dogma of
-molecular biology. More specifically, it is trying to learn the [DNA codons](https://en.wikipedia.org/wiki/DNA_codon_table)
+This is a RNN (sequence to sequence or encoder-decoder) demo implementation to
+learn general rules of central dogma of molecular biology. More specifically, it is trying to learn the [DNA codons](https://en.wikipedia.org/wiki/DNA_codon_table)
 that is used to translate the DNA sequence to protein sequence (like a
 dictionary). The data is generated from a truth codon table (unlimited) but it
 can also be from public sequence repos as below.
