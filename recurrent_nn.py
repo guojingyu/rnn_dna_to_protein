@@ -79,6 +79,33 @@ def tanh_derivative(x):
     return 1.0 - np.tanh(x)**2
 
 
+def threshold_prob_vec(prob):
+    """
+    convert a probability vector into a one hot if there is a max prob
+    if all prob are zeros, return itself
+    :param prob: numpy array as vector
+    :return: one hot or all zero vector
+    """
+    if not prob.any() > 0.0: return prob
+    one_hot = np.zeros(np.shape(prob))
+    one_index = np.argmax(prob)
+    one_hot[one_index] = 1.0
+    return one_hot
+
+
+def gradient_clipping_by_norm(d, clip_norm=1.0):
+    """
+    clipping gradient by its norm
+    https://cs224d.stanford.edu/lecture_notes/LectureNotes4.pdf
+    :param d:
+    :return:
+    """
+    norm = np.linalg.norm(d, ord=2)
+    if norm > clip_norm:
+        return d * clip_norm / norm
+    return d
+
+
 class RNN(object):
     def __init__(self, input_dim=4, h_dim=100, o_dim=21, bptt_truncate=4, rnn_role=None):
         """
@@ -138,7 +165,7 @@ class RNN(object):
         O = np.zeros((self.timesteps, self.o_dim))
         for t in range(self.timesteps):
             # update
-            H[t] = np.tanh(np.dot(self.W_h, H[t - 1]) +
+            H[t+1] = np.tanh(np.dot(self.W_h, H[t]) +
                            np.dot(self.W_x, X[t]) +
                            self.b) # H[t] shaped (self.h_dim, 1)
             # the output itself is based on the current timestep hidden status
@@ -156,7 +183,7 @@ class RNN(object):
         return H
 
 
-    def decoding_forward(self, C, eos_vec):
+    def decoding_forward(self, C, eos_vec, step_limit=8):
         """
         forward pass as decoding steps
         :param C: the input hidden status or context (thus C)
@@ -165,7 +192,11 @@ class RNN(object):
         """
         H = np.array([C])
         O = np.zeros((1, self.o_dim))
-        while O[self.timesteps] is not eos_vec:
+        # for each training sample (a sequence), reset the timesteps,
+        # which will be used later in the back prop step
+        self.timesteps = 0
+        while threshold_prob_vec(O[self.timesteps]) is not eos_vec and \
+                self.timesteps <= step_limit:
             # update timestep counts
             self.timesteps += 1
             # making spaceholder
@@ -292,7 +323,8 @@ class RNN(object):
                 dW_x += np.outer(dH_t, X[t2])  # shape (h_dim, x_dim)
                 db += np.sum(dH_t[t2], axis=0, keepdims=True)
                 # Update hidden gradients for one previous timestep in back prop
-                dH_t = np.dot(dH_t, self.W_h) * tanh_derivative(H[t2 - 1])
+                dH_t = gradient_clipping_by_norm(np.dot(dH_t, self.W_h) *
+                                                 tanh_derivative(H[t2 - 1]))
         return dW_x, dW_h, db
 
 
@@ -321,29 +353,30 @@ class RNN(object):
         self.c   -= learning_rate * dc
 
 
-    def train(self, data, learning_rate=0.005, epoch=100, print_interval=100):
+    def train(self, data, learning_rate=0.005, data_print_interval=1000):
         """
-        train the vanilla rnn method
+        train the vanilla rnn method as running one epoch
         :param X: Input
         :param Y: Input lable
         :return: loss records
         """
         loss = []
-        for n in range(epoch):
-            for i in range(0, len(data)):
-                X, Y = data[i]
-                # forward
-                H, O = self.forward(X)
-                # back prop
-                dW_x, dW_h, dW_o, db, dc = self.backprop_through_time(X, Y, H, O)
-                # update
-                self.update(dW_x, dW_h, dW_o, db, dc, learning_rate)
+        accu_loss = 0.0
+        for i in range(0, len(data)):
+            X, Y = data[i]
+            # forward
+            H, O = self.forward(X)
+            # back prop
+            dW_x, dW_h, dW_o, db, dc = self.backprop_through_time(X, Y, H, O)
+            # update
+            self.update(dW_x, dW_h, dW_o, db, dc, learning_rate)
             # evaluate error
             current_loss = total_loss(O, Y)
-            loss.append((n, current_loss))
-            if n % print_interval == 0:
-                print("Current Loss: %s".format())
-        return loss
+            accu_loss += current_loss
+            if (i+1) % data_print_interval == 0:
+                print("Sample {} and current training loss : {}".format(i+1,
+                                                                        accu_loss/(i+1)))
+        return accu_loss/len(data)
 
 
     def evaluate(self, X):
@@ -373,6 +406,7 @@ class Seq2Seq(object):
         :param X: input sample as an encoding of a sequence
         :return: ec_H, ec_O, dc_H, dc_O
         """
+        self.timesteps = 0
         ec_H = self.encoder.encoding_forward(X)
         dc_H, dc_O = self.decoder.decoding_forward(ec_H[-1], stop_vec)
         self.timesteps = self.encoder.timesteps + self.encoder.timesteps
@@ -388,7 +422,7 @@ class Seq2Seq(object):
         dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc = \
             self.decoder.decoding_backprop_through_time(dc_O, Y, dc_H, dc_O)
         ec_dW_x, ec_dW_h, ec_db = \
-            self.encoder.encoding_backprop_through_time(X, dc_dW_h, ec_H)
+            self.encoder.encoding_backprop_through_time(X, dc_dW_h[0], ec_H)
         return ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc
 
 
@@ -417,29 +451,29 @@ class Seq2Seq(object):
         self.encoder.b   -= learning_rate * ec_db
 
 
-    def train(self, data, learning_rate=0.005, epoch=100,
-              reverse_input=False,
+    def train(self, data, learning_rate=0.005, reverse_input=False,
               stop_vec=encoding(END_OF_SENTENCE, AMINO_ACID),
-              print_interval=100):
-        loss = []
-        for n in range(epoch):
-            for i in range(0, len(data)):
-                X, Y = data[i]
-                if reverse_input: X = reverse_seq(X)
-                # forward
-                ec_H, dc_H, dc_O = self.forward(X, stop_vec)
-                # back prop
-                ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc = \
-                    self.backward(X, Y, ec_H, dc_H, dc_O)
-                # update
-                self.update(ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h,
-                            dc_dW_o, dc_db, dc_dc, learning_rate)
+              data_print_interval=1000):
+        accu_loss = 0.0
+        current_loss = 0.0
+        for i in range(0, len(data)):
+            X, Y = data[i]
+            if reverse_input: X = reverse_seq(X)
+            # forward
+            ec_H, dc_H, dc_O = self.forward(X, stop_vec)
+            # back prop
+            ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc = \
+                self.backward(X, Y, ec_H, dc_H, dc_O)
+            # update
+            self.update(ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h,
+                        dc_dW_o, dc_db, dc_dc, learning_rate)
             # evaluate error
-            current_loss = total_loss(O, Y)
-            loss.append((n, current_loss))
-            if n % print_interval == 0:
-                print("Current Loss: %s".format())
-        return loss
+            current_loss = total_loss(dc_O[1:], Y)
+            accu_loss += current_loss
+            if (i+1) % data_print_interval == 0:
+                print("Sample {} and current training loss : {}".format((i+1),
+                                                                        accu_loss/(i+1)))
+        return accu_loss/len(data)
 
 
     def evaluate(self, X, stop_vec):
