@@ -18,6 +18,7 @@ from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
 import matplotlib.pyplot as plt
 
+
 def plot_loss(loss):
     """
     plot loss as a line chart
@@ -28,16 +29,6 @@ def plot_loss(loss):
     plt.plot(loss_in_np[0], loss_in_np[1], label='loss')
     # Show the plot
     plt.show()
-
-
-def train_seq_2_seq(encoder, decoder, stop_vec, data, learning_rate, epoch,
-                    print_interval):
-    """
-
-    :return:
-    """
-
-    return learner, loss
 
 
 def get_alignment(pred, label, matching=2, mismatching=-1, gap=0.5,
@@ -69,11 +60,11 @@ def get_alignment(pred, label, matching=2, mismatching=-1, gap=0.5,
 if __name__ == "__main__":
     # setting param
     encoded = True
-    data_size = 1000
-    learning_rate = 0.0001
-    epoch = 5
+    data_size = 10000
+    learning_rate = 0.001
+    epoch = 10
     epoch_print_interval = 1
-    data_print_interval = 100
+    data_print_interval = 1000
     dna_stop_vec = encoding(END_OF_SENTENCE, NUCLEOTIDE)
     ptn_stop_vec = encoding(END_OF_SENTENCE, AMINO_ACID)
 
@@ -103,12 +94,12 @@ if __name__ == "__main__":
     test_cdna_file = "data/cDNA_CFTR.fa"
     test_cdna_seq_dict = get_sequences_from_fasta_file(test_cdna_file)
     dna_sequences = [seq_obj.seq for seq_obj in test_cdna_seq_dict.values()]
-    print(dna_sequences[0])
+    # print(dna_sequences[0])
     dna_length = len(dna_sequences[0])
     test_aa_file = "data/amino_acid_CFTR.fa"
     test_aa_seq_dict = get_sequences_from_fasta_file(test_aa_file)
     aa_sequences = [seq_obj.seq for seq_obj in test_aa_seq_dict.values()]
-    print(aa_sequences[0])
+    # print(aa_sequences[0])
     aa_length = len(dna_sequences[0])
     test_data = generate_seq_data_by_sampling_seq(dna_sequences[0],
                                               aa_sequences[0])

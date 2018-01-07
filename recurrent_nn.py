@@ -93,7 +93,7 @@ def threshold_prob_vec(prob):
     return one_hot
 
 
-def gradient_clipping_by_norm(d, clip_norm=1.0):
+def gradient_clipping_by_norm(d, clip_norm=50.0):
     """
     clipping gradient by its norm
     https://cs224d.stanford.edu/lecture_notes/LectureNotes4.pdf
@@ -183,7 +183,7 @@ class RNN(object):
         return H
 
 
-    def decoding_forward(self, C, eos_vec, step_limit=8):
+    def decoding_forward(self, C, eos_vec, step_limit=12):
         """
         forward pass as decoding steps
         :param C: the input hidden status or context (thus C)
@@ -257,7 +257,7 @@ class RNN(object):
         dc = np.zeros(self.o_dim).astype(np.float32)
 
         # gradient for the softmax
-        O, Y = padding_vector(O, Y)
+        O, Y = padding_vector(O[1:], Y)
         dO = O - Y # only works for one-hot encoding, dO shaped (sample, o_dim)
         for t in reversed(range(k1)):
             # for output weights at timestep t
@@ -265,24 +265,24 @@ class RNN(object):
             # particular one input at time t
             # By adding up, the gradients will accumulate derivatives at all
             # timesteps, as from all input in the sample sequence
-            dW_o += np.outer(dO[t], H[t]) # shaped (o_dim, h_dim)
+            dW_o += np.outer(dO[t], H[t+1]) # shaped (o_dim, h_dim)
             dc += np.sum(dO[t], axis=0, keepdims=True)
             # for gradients for both prev hidden state and input and bias at
             # time t
             # dO[t] shaped (1, o_dim) W_o shape (o_dim, h_dim)
-            dH_t = np.dot(dO[t], self.W_o) * tanh_derivative(H[t]) #dH_t (1, h_dim)
+            dH_t = np.dot(dO[t], self.W_o) * (1.0 - H[t]**2) #dH_t (1, h_dim)
             # Backprop through time from time t by max(1, t-k2+1) steps (see
             # above) using hidden derivatives at time t
             # this is a tricky bit: there is one time step added for hidden
             # states in forward pass, thus the max is not thresheld by 0 but
             # by 1, thus the real first input is at timestep 1.
-            for t2 in reversed(range(max(1, t - k2 + 1), t)):
+            for t2 in reversed(range(max(1, t - k2 + 1), t+1)):
                 dW_h += np.outer(dH_t, H[t2-1]) # -1 for prev step
                 # shape (h_dim, h_dim)
                 dW_x += np.outer(dH_t, X[t2]) # shape (h_dim, x_dim)
                 db += np.sum(dH_t[t2], axis=0, keepdims=True)
                 # Update hidden gradients for one previous timestep in back prop
-                dH_t = np.dot(dH_t, self.W_h) * tanh_derivative(H[t2-1])
+                dH_t = np.dot(self.W_h, dH_t) * (1.0 - H[t2-1]**2)
         return dW_x, dW_h, dW_o, db, dc
 
 
@@ -317,14 +317,13 @@ class RNN(object):
             # this is a tricky bit: there is one time step added for hidden
             # states in forward pass, thus the max is not thresheld by 0 but
             # by 1, thus the real first input is at timestep 1.
-            for t2 in reversed(range(max(1, t - k2 + 1), t)):
-                dW_h += np.outer(dH_t, H[t2 - 1])  # -1 for prev step
+            for t2 in reversed(range(max(1, t - k2 + 1), t+1)):
+                dW_h += np.outer(dH_t, H[t2-1])
                 # shape (h_dim, h_dim)
                 dW_x += np.outer(dH_t, X[t2])  # shape (h_dim, x_dim)
                 db += np.sum(dH_t[t2], axis=0, keepdims=True)
                 # Update hidden gradients for one previous timestep in back prop
-                dH_t = gradient_clipping_by_norm(np.dot(dH_t, self.W_h) *
-                                                 tanh_derivative(H[t2 - 1]))
+                dH_t = np.dot(self.W_h, dH_t) * (1.0 - H[t2] ** 2)
         return dW_x, dW_h, db
 
 
@@ -420,7 +419,8 @@ class Seq2Seq(object):
         """
         # the dc_O, decoder output is the input for itself
         dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc = \
-            self.decoder.decoding_backprop_through_time(dc_O, Y, dc_H, dc_O)
+            self.decoder.decoding_backprop_through_time(dc_O[:-1], Y, dc_H,
+                                                        dc_O) # X, Y, H, O
         ec_dW_x, ec_dW_h, ec_db = \
             self.encoder.encoding_backprop_through_time(X, dc_dW_h[0], ec_H)
         return ec_dW_x, ec_dW_h, ec_db, dc_dW_x, dc_dW_h, dc_dW_o, dc_db, dc_dc

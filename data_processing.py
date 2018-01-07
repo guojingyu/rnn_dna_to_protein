@@ -56,6 +56,7 @@ def encoding(input, alphabet, add_eos=True, EOS=END_OF_SENTENCE):
     return output
 
 def decoding(one_hot_vec, alphabet, added_eos=True, EOS=END_OF_SENTENCE):
+    if not np.any(one_hot_vec > 0.0): return ""
     if added_eos:
         alphabet = alphabet + EOS
     one_index = np.where(one_hot_vec == 1.0)[0][0]
@@ -91,7 +92,7 @@ def generate_seq_data_by_truth_codon(codon_tbl=TRUE_DNA_CODON_TABLE,
     # just as the language model learned per-char by RNN shown
     # in Andrej Karpathy's blog post.
     # uniform sampling in [ 3,  6,  9, 12, 15, 18, 21, 24, 27, 30]
-    DNA_length = np.random.choice(np.arange(3, 15 + 1, 3))
+    DNA_length = np.random.choice(np.arange(3, 30 + 1, 3))
     keys = list(codon_tbl.keys())
     num_codon = len(keys)
 
@@ -144,7 +145,7 @@ def generate_seq_data_by_sampling_seq(dna, ptn, encoded=True):
     data = []
     i = 0
     while i < len(dna):
-        sample_dna_length = np.random.choice(np.arange(3, 15 + 1, 3))
+        sample_dna_length = np.random.choice(np.arange(3, 30 + 1, 3))
         if i + sample_dna_length >= len(dna):
             sample_dna_length = len(dna) - i
         dna_seq = dna[i:i+sample_dna_length]
