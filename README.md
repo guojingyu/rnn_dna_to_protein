@@ -7,7 +7,9 @@ training of this encoding-decoding is still suffering from gradient vanish or
 explosion.
 
 I expect approaching 0 training loss in ideal situation due to unlimited no
-noise data available. It still needs more investigation and work.
+noise data available. It is possible that simple naive RNN based encoder
+decoder will not work well for this issue. LSTM may be worthy trying. For now,
+it still needs more investigation and work.
 
 #### Overview
 This is a RNN (sequence to sequence or encoder-decoder) demo implementation to
